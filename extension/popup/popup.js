@@ -707,8 +707,11 @@ class PopupController {
           </div>
         </div>
         <div class="education-details">
-          <span class="education-year">${edu.graduationYear || ''}</span>
-          ${edu.field ? `<span class="education-field">${edu.field}</span>` : ''}
+          <span class="education-dates">
+            ${edu.startDate || ''}${edu.startDate && edu.endDate ? ' - ' : ''}${edu.endDate || ''}
+            ${(!edu.startDate && !edu.endDate && edu.graduationYear) ? edu.graduationYear : ''}
+          </span>
+          ${edu.field ? `<span class="education-field"> @ ${edu.field}</span>` : ''}
         </div>
       </div>
     `).join('');
@@ -738,7 +741,9 @@ class PopupController {
       degree,
       field,
       school,
-      graduationYear
+      graduationYear,
+      startDate: document.getElementById('edu-start').value.trim(),
+      endDate: document.getElementById('edu-end').value.trim()
     };
 
     this.userProfile.education = this.userProfile.education || [];
@@ -756,6 +761,8 @@ class PopupController {
     document.getElementById('edu-field').value = '';
     document.getElementById('edu-school').value = '';
     document.getElementById('edu-year').value = '';
+    document.getElementById('edu-start').value = '';
+    document.getElementById('edu-end').value = '';
   }
 
   editEducation(index) {
@@ -766,6 +773,8 @@ class PopupController {
     document.getElementById('edu-field').value = edu.field || '';
     document.getElementById('edu-school').value = edu.school || '';
     document.getElementById('edu-year').value = edu.graduationYear || '';
+    document.getElementById('edu-start').value = edu.startDate || '';
+    document.getElementById('edu-end').value = edu.endDate || '';
 
     this.userProfile.education.splice(index, 1);
     this.renderEducation();

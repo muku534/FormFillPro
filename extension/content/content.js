@@ -672,17 +672,19 @@ const FieldDetector = {
 const BlockContainerMapper = {
   // Use separate maps for different block types
   maps: {
-    work: { containerIndexMap: new WeakMap(), containerList: [], data: [] },
-    edu: { containerIndexMap: new WeakMap(), containerList: [], data: [] }
+    work: { containerInfoMap: new WeakMap(), containerList: [], data: [] },
+    edu: { containerInfoMap: new WeakMap(), containerList: [], data: [] }
   },
   debugMode: true,
 
   // Reset a specific block type mapper
   reset(type, data) {
     if (!this.maps[type]) return;
-    this.maps[type].containerIndexMap = new WeakMap();
+    this.maps[type].containerInfoMap = new WeakMap();
     this.maps[type].containerList = [];
     this.maps[type].data = data || [];
+    // Reset counters and list order
+    this.maps[type].counter = 0;
 
     if (this.debugMode) {
       console.log(`=== FormFill Pro: BlockContainerMapper RESET [${type}] ===`);
@@ -702,111 +704,106 @@ const BlockContainerMapper = {
   findContainer(element, type) {
     if (!element) return null;
 
-    let patterns = [];
-    if (type === 'work') {
-      patterns = [
-        '[data-automation-id*="workExperience"]',
-        '[data-automation-id*="employment"]',
-        '[class*="experience-item"]',
-        '[class*="experience-block"]',
-        '[class*="experience-entry"]',
-        '[class*="work-experience"]',
-        '[class*="workExperience"]',
-        '[class*="employment-item"]',
-        '[class*="job-entry"]',
-        '[class*="position-item"]',
-        '[class*="experience_"]',
-        '[class*="_experience"]'
-      ];
-    } else if (type === 'edu') {
-      patterns = [
-        '[data-automation-id*="education"]',
-        '[class*="education-item"]',
-        '[class*="education-block"]',
-        '[class*="education-entry"]',
-        '[class*="school-item"]',
-        '[class*="academic-item"]',
-        '[class*="education_"]',
-        '[class*="_education"]'
-      ];
+    const blockPatterns = type === 'work'
+      ? ['[role="group"][aria-labelledby*="Work-Experience"]', '[role="group"][aria-labelledby*="Work Experience"]']
+      : ['[role="group"][aria-labelledby*="Education"]', '[data-fkit-id^="education-"]'];
+
+    for (const pattern of blockPatterns) {
+      const block = element.closest(pattern);
+      if (block) return block;
     }
 
-    // Try specific block patterns first
-    for (const pattern of patterns) {
-      const found = element.closest(pattern);
-      if (found) return found;
+    const sectionPatterns = type === 'work'
+      ? ['[data-automation-id="workExperienceSection"]', '[data-automation-id*="workExperience"]']
+      : ['[data-automation-id="educationSection"]', '[data-automation-id*="education"]'];
+
+    let sectionRoot = null;
+    for (const selector of sectionPatterns) {
+      const candidate = element.closest(selector);
+      if (candidate) {
+        sectionRoot = candidate;
+        break;
+      }
     }
 
-    // Fallback to generic structures
-    return element.closest('fieldset') ||
-      element.closest('[role="group"]') ||
-      element.closest('.card') ||
-      element.closest('.panel') ||
-      element.closest('section');
+    if (sectionRoot) {
+      const children = Array.from(sectionRoot.querySelectorAll(':scope > div, :scope > fieldset, :scope > section'))
+        .filter(child => child.querySelector('input, select, textarea'));
+
+      for (const child of children) {
+        if (child.contains(element)) return child;
+      }
+      return sectionRoot;
+    }
+
+    return element.closest('[role="group"], fieldset');
   },
 
-  // Get or assign an index for a container
-  getIndexForContainer(container, type) {
-    if (!container || !this.maps[type]) {
-      return 0; // Default to first entry if no container or type
-    }
-
+  // Get or assign info for a container
+  getContainerInfo(container, type) {
     const map = this.maps[type];
+    if (!map) return null;
 
-    // Check if this container already has an assigned index
-    if (map.containerIndexMap.has(container)) {
-      return map.containerIndexMap.get(container);
+    if (!container) {
+      if (this.debugMode) {
+        console.warn('FormFill Pro: No container found for element, skipping sequential mapping');
+      }
+      return null;
     }
 
-    // Assign the next available index
-    const index = Math.min(map.containerList.length, map.data.length - 1);
-    map.containerIndexMap.set(container, index);
+    // Already assigned → reuse exactly that index
+    if (map.containerInfoMap.has(container)) {
+      return map.containerInfoMap.get(container);
+    }
+
+    // Assign strictly by container appearance order
+    const index = map.containerList.length;
+    const info = { index };
+
+    map.containerInfoMap.set(container, info);
     map.containerList.push(container);
 
     if (this.debugMode) {
-      const maxIdx = map.data.length - 1;
-      const note = index > maxIdx ? ` (capped to ${maxIdx}, only ${map.data.length} entries available)` : '';
-      console.log(`FormFill Pro: [${type}] Container #${map.containerList.length} assigned to entry[${index}]${note}`);
+      console.log(`FormFill Pro: [${type}] Container #${map.containerList.length} assigned index ${index}`);
     }
 
-    return Math.max(0, index);
+    return info;
   },
 
   // Get the index for a field based on its container
-  getIndexForField(element, type) {
-    const container = this.findContainer(element, type);
-    let index = this.getIndexForContainer(container, type);
-
-    const map = this.maps[type];
-    if (!map) return 0;
-
-    // Edge case: more containers than entries - reuse last entry
-    if (index >= map.data.length && map.data.length > 0) {
-      index = map.data.length - 1;
-    }
-
-    if (this.debugMode && container) {
-      const containerClass = container.className?.substring(0, 50) || 'no-class';
-      console.log(`FormFill Pro: [${type}] Field in container "${containerClass}" -> entry[${index}]`);
-    }
-
-    return index;
+  getIndexForField(element, blockType) {
+    const container = this.findContainer(element, blockType);
+    const info = this.getContainerInfo(container, blockType);
+    return info ? info.index : null;
   },
 
   // Get the entry data for a field
   getEntryForField(element, type) {
     const index = this.getIndexForField(element, type);
+    if (index === null) return {};
+
     const map = this.maps[type];
-    return originalType;
+    if (!map || !map.data) return {};
+
+    if (!map.data[index]) {
+      if (this.debugMode) {
+        console.warn(`FormFill Pro: [${type}] No entry found for index ${index}. Total available: ${map.data.length}`);
+      }
+      return {}; // Return empty instead of silent fallback to index 0
+    }
+
+    return map.data[index];
   },
 };
 
 const MultiBlockFiller = {
   // Mapping field types to their block types
   typeMap: {
-    workExpTitle: 'work', workExpCompany: 'work', workExpLocation: 'work',
+    workExpTitle: 'work', jobTitle: 'work',
+    workExpCompany: 'work', company: 'work',
+    workExpLocation: 'work',
     workExpStartDate: 'work', workExpEndDate: 'work', workExpDescription: 'work',
-    workExpCurrentJob: 'work', jobTitle: 'work', company: 'work',
+    workExpCurrentJob: 'work',
     eduSchool: 'edu', eduDegree: 'edu', eduField: 'edu',
     eduGradYear: 'edu', eduStartDate: 'edu', eduEndDate: 'edu'
   },
@@ -827,15 +824,25 @@ const MultiBlockFiller = {
 
   fillBlockField(element, fieldType, data, sectionIndex, blockType) {
     const entries = data || [];
-    const entryIndex = Math.min(sectionIndex, entries.length - 1);
-    const entry = entries[entryIndex] || {};
+
+    // STRICT: Only fill if we have a profile entry for this exact index
+    const entry = entries[sectionIndex];
+    if (!entry) {
+      if (BlockContainerMapper.debugMode) {
+        console.warn(`FormFill Pro: [${blockType}] Skipping block index ${sectionIndex} (no entry in profile)`);
+      }
+      return null;
+    }
 
     if (blockType === 'work') {
       switch (fieldType) {
         case 'workExpTitle':
-        case 'jobTitle': return entry.title || '';
+        case 'jobTitle':
+          // Only fill jobTitle/company here if we have a valid sequence
+          return entry.title || '';
         case 'workExpCompany':
-        case 'company': return entry.company || '';
+        case 'company':
+          return entry.company || '';
         case 'workExpLocation': return entry.location || '';
         case 'workExpStartDate': return entry.startDate || '';
         case 'workExpEndDate': return entry.endDate || '';
@@ -868,9 +875,13 @@ const MultiBlockFiller = {
     const data = blockType === 'work' ? (profile.workExperience || []) : (profile.education || []);
 
     // Use container-based mapper to get the index
-    let sectionIndex = 0;
+    let sectionIndex = null;
     if (data.length > 0) {
       sectionIndex = BlockContainerMapper.getIndexForField(field.element, blockType);
+    }
+
+    if (sectionIndex === null) {
+      return { isMultiBlock: false, field };
     }
 
     const value = this.fillBlockField(
@@ -952,9 +963,6 @@ const FormFiller = {
   },
 
   getValueForField(fieldType, profile) {
-    const workExp = profile.workExperience || [];
-    const firstExp = workExp.length > 0 ? workExp[0] : {};
-
     const valueMap = {
       email: profile.email,
       password: profile.password,
@@ -986,14 +994,7 @@ const FormFiller = {
       expirationYear: String(FakeDataGenerator.randomInt(25, 30)),
       ssn: FakeDataGenerator.ssn(),
       message: profile.summary || profile.coverLetter || FakeDataGenerator.paragraph(),
-      text: '',
-      workExpTitle: firstExp.title || profile.jobTitle || '',
-      workExpCompany: firstExp.company || profile.company || '',
-      workExpLocation: firstExp.location || '',
-      workExpStartDate: firstExp.startDate || '',
-      workExpEndDate: firstExp.endDate || '',
-      workExpDescription: firstExp.description || profile.summary || '',
-      workExpCurrentJob: !firstExp.endDate
+      text: ''
     };
     return valueMap[fieldType] !== undefined ? valueMap[fieldType] : '';
   },
@@ -1281,9 +1282,11 @@ const FormFiller = {
         }
       }
 
-      // E. Fallback to regular field filling
-      this.fillField(element, field.detectedType, profile);
-      filledCount++;
+      // E. Fallback to regular field filling (Only for non-multi-block fields)
+      if (!field.isWorkExp && !field.isEdu) {
+        this.fillField(element, field.detectedType, profile);
+        filledCount++;
+      }
     }
 
     return { success: true, fieldsCount: filledCount };

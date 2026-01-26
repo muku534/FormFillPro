@@ -187,29 +187,33 @@ const SmartFiller = {
 
       // Handle multi-block fields (Work Exp, Education) using container-based indexing
       const isMultiBlock = (field.isWorkExp || field.isEdu);
-      if (isMultiBlock && typeof BlockContainerMapper !== 'undefined') {
-        const blockType = field.isEdu ? 'edu' : 'work';
-        const data = blockType === 'work' ? profile.workExperience : profile.education;
+      if (isMultiBlock) {
+        if (typeof BlockContainerMapper !== 'undefined') {
+          const blockType = field.isEdu ? 'edu' : 'work';
+          const data = blockType === 'work' ? profile.workExperience : profile.education;
 
-        if (data?.length > 0) {
-          const entryIndex = BlockContainerMapper.getIndexForField(field.element, blockType);
-          const entry = data[entryIndex] || data[data.length - 1];
+          if (data?.length > 0) {
+            const entryIndex = BlockContainerMapper.getIndexForField(field.element, blockType);
+            const entry = data[entryIndex];
 
-          if (entry) {
-            const value = this.mapBlockFieldValue(field.detectedType, entry, blockType);
-            if (value != null && value !== '') {
-              FormFiller.setFieldValue(field.element, String(value));
-              results.push({
-                field: field.name || field.id || `field-${i}`,
-                type: field.detectedType,
-                success: true,
-                source: blockType,
-                entryIndex: entryIndex
-              });
-              continue;
+            if (entry) {
+              const value = this.mapBlockFieldValue(field.detectedType, entry, blockType);
+              if (value != null && value !== '') {
+                FormFiller.setFieldValue(field.element, String(value));
+                results.push({
+                  field: field.name || field.id || `field-${i}`,
+                  type: field.detectedType,
+                  success: true,
+                  source: blockType,
+                  entryIndex: entryIndex
+                });
+                continue;
+              }
             }
           }
         }
+        // 🔒 CRITICAL: Stop here for multi-block fields. No fallback to generic filling.
+        continue;
       }
 
       const result = FormFiller.fillField(field.element, field.detectedType, profile);

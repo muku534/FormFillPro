@@ -412,11 +412,24 @@ const FieldDetector = {
     return 'text';
   },
 
+  matchesWordBoundary(searchString, patterns) {
+    const words = searchString.toLowerCase().split(/[\s_\-.,]+/);
+    return patterns.some(pattern => {
+      const patternLower = pattern.toLowerCase();
+      if (words.includes(patternLower)) return true;
+      if (searchString.toLowerCase().includes(patternLower)) {
+        const regex = new RegExp(`(^|[^a-z])${patternLower}([^a-z]|$)`, 'i');
+        return regex.test(searchString);
+      }
+      return false;
+    });
+  },
+
   // Find matching prioritized pattern (work experience or education)
   findPriorityMatch(searchString) {
     for (const [fieldType, pattern] of Object.entries(this.patterns)) {
       if (!pattern.isWorkExp && !pattern.isEdu) continue;
-      if (this.matchesPattern(searchString, pattern.attributes)) {
+      if (this.matchesWordBoundary(searchString, pattern.attributes)) {
         return fieldType;
       }
     }
@@ -424,7 +437,7 @@ const FieldDetector = {
   },
 
   matchesPattern(searchString, patterns) {
-    return patterns.some(pattern => searchString.includes(pattern));
+    return patterns.some(pattern => searchString.includes(pattern.toLowerCase()));
   },
 
   analyzeForm(form) {
